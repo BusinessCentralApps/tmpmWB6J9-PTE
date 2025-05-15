@@ -1,0 +1,106 @@
+name: " Push Power Platform changes"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to push changes to
+        required: true
+      solutionFolder:
+        description: Folder name of the Power Platform solution (leave empty to use AL-Go setting)
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  PushChanges:
+    runs-on: [windows-latest]
+    name: Push changes to ${{ inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize the workflow
+        id: init
+        uses: businesscentralapps/tmpmWB6J9-Actions/WorkflowInitialize@main
+        with:
+          shell: powershell
+
+      - name: EnvName
+        env:
+          _environment: ${{ inputs.environment }}
+        run: |
+          $errorActionPreference = "Stop"; $ProgressPreference = "SilentlyContinue"; Set-StrictMode -Version 2.0
+          # Environment names can contains spaces and tags (like (PROD) etc. We need to remove them to get the correct environment name)
+          $envName = "$env:_environment".Split(' ')[0]
+          Add-Content -encoding utf8 -Path $env:GITHUB_ENV -Value "envName=$envName"
+
+      - name: Read settings
+        uses: businesscentralapps/tmpmWB6J9-Actions/ReadSettings@main
+        with:
+          shell: powershell
+          get: powerPlatformSolutionFolder
+
+      - name: Determine secrets
+        id: DetermineSecrets
+        uses: businesscentralapps/tmpmWB6J9-Actions/DetermineSecrets@main
+        with:
+          shell: powershell
+          getSecrets: '${{ env.envName }}-AuthContext,${{ env.envName }}_AuthContext,AuthContext'
+
+      - name: Read secrets
+        id: ReadSecrets
+        uses: businesscentralapps/tmpmWB6J9-Actions/ReadSecrets@main
+        with:
+          shell: powershell
+          gitHubSecrets: ${{ format(steps.DetermineSecrets.outputs.formatStr,toJSON(secrets[env.S0]),toJSON(secrets[env.S1]),toJSON(secrets[env.S2]),toJSON(secrets[env.S3]),toJSON(secrets[env.S4]),toJSON(secrets[env.S5]),toJSON(secrets[env.S6]),toJSON(secrets[env.S7]),toJSON(secrets[env.S8]),toJSON(secrets[env.S9]),toJSON(secrets[env.S10]),toJSON(secrets[env.S11]),toJSON(secrets[env.S12]),toJSON(secrets[env.S13]),toJSON(secrets[env.S14]),toJSON(secrets[env.S15]),toJSON(secrets[env.S16]),toJSON(secrets[env.S17]),toJSON(secrets[env.S18]),toJSON(secrets[env.S19]),toJSON(secrets[env.S20]),toJSON(secrets[env.S21]),toJSON(secrets[env.S22]),toJSON(secrets[env.S23]),toJSON(secrets[env.S24]),toJSON(secrets[env.S25]),toJSON(secrets[env.S26]),toJSON(secrets[env.S27]),toJSON(secrets[env.S28]),toJSON(secrets[env.S29]),toJSON(secrets[env.S30]),toJSON(secrets[env.S31])) }}
+
+      - name: Determine Deployment Environments
+        id: DetermineDeploymentEnvironments
+        uses: businesscentralapps/tmpmWB6J9-Actions/DetermineDeploymentEnvironments@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          shell: powershell
+          getEnvironments: ${{ inputs.environment }}
+          type: 'All'
+
+      - name: Set Power Platform solution folder
+        env:
+          _solutionFolder: ${{ inputs.solutionFolder }}
+        run: |
+          $errorActionPreference = "Stop"; $ProgressPreference = "SilentlyContinue"; Set-StrictMode -Version 2.0
+          $solutionFolder = $env:_solutionFolder
+          if ($solutionFolder -eq '') {
+            Write-Host "Solution folder is not provided. Taking the folder from AL-Go settings"
+            $solutionFolder = $env:powerPlatformSolutionFolder
+          }
+          Write-Host "Solution folder: $solutionFolder"
+          Add-Content -encoding utf8 -Path $env:GITHUB_ENV -Value "solutionFolder=$solutionFolder"
+
+      - name: Export and push changes to Power Platform
+        uses: businesscentralapps/tmpmWB6J9-Actions/DeployPowerPlatform@main
+        env:
+          Secrets: '${{ steps.ReadSecrets.outputs.Secrets }}'
+        with:
+          shell: powershell
+          environmentName: ${{ inputs.environment }}
+          solutionFolder: ${{ env.solutionFolder }}
+          deploymentEnvironmentsJson: ${{ steps.DetermineDeploymentEnvironments.outputs.deploymentEnvironmentsJson }}
+
+      - name: Finalize the workflow
+        if: always()
+        uses: businesscentralapps/tmpmWB6J9-Actions/WorkflowPostProcess@main
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          shell: powershell
+          telemetryScopeJson: ${{ steps.init.outputs.telemetryScopeJson }}
+          currentJobContext: ${{ toJson(job) }}
